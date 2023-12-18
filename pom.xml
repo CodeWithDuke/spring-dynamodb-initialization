@@ -6,7 +6,7 @@
 
     <groupId>io.github.duke</groupId>
     <artifactId>spring-dynamodb-initialization</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0.0</version>
     <packaging>pom</packaging>
     <modules>
         <module>dynamodb-starter</module>
@@ -34,7 +34,7 @@
             <dependency>
                 <groupId>io.github.duke</groupId>
                 <artifactId>dynamodb-starter</artifactId>
-                <version>1.0-SNAPSHOT</version>
+                <version>1.0.0</version>
             </dependency>
 
             <!-- Spring Context -->

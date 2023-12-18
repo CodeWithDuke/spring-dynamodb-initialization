@@ -24,3 +24,6 @@ dynamodb.starter.throughput.writeCapacity=10
 
 # Set the read capacity for your DynamoDB table
 dynamodb.starter.throughput.readCapacity=10
+
+# Set the package name
+dynamodb.starter.package.scan=your.package.name
