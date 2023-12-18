@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>io.github.duke</groupId>
+    <groupId>io.github.codewithduke</groupId>
     <artifactId>spring-dynamodb-initialization</artifactId>
     <version>1.0.0</version>
     <packaging>pom</packaging>
@@ -32,7 +32,7 @@
         <dependencies>
             <!-- own modules -->
             <dependency>
-                <groupId>io.github.duke</groupId>
+                <groupId>io.github.codewithduke</groupId>
                 <artifactId>dynamodb-starter</artifactId>
                 <version>1.0.0</version>
             </dependency>
