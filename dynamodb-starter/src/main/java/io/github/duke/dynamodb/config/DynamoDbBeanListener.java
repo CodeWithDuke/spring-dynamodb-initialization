@@ -1,8 +1,10 @@
 package io.github.duke.dynamodb.config;
 
 import io.awspring.cloud.dynamodb.DefaultDynamoDbTableNameResolver;
+import io.github.duke.dynamodb.exception.EntityNotFoundException;
 import io.github.duke.dynamodb.utils.DynamoDbStarterUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.context.ApplicationListener;
@@ -18,94 +20,128 @@ import io.github.duke.dynamodb.annotation.DynamoDbDocument;
 
 import java.lang.reflect.Method;
 import java.util.*;
-import java.util.function.Predicate;
 
 @Slf4j
 @Component
 public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshedEvent> {
 
+    private static final String CLASS_NOT_FOUND_MESSAGE = "Invalid class name";
+
     private final DynamoDbClient dynamoDbClient;
-
     private final DefaultDynamoDbTableNameResolver prefixedTableNameResolver;
+    private final String tablePrefix;
+    private final String packageName;
+    private final BillingMode billingMode;
+    private final long writeCapacity;
+    private final long readCapacity;
 
-    @Value("${dynamodb.starter.table.prefix}")
-    private String tablePrefix;
-
-    @Value("${dynamodb.starter.package.scan:''}")
-    private String packageName;
-
-    @Value("${dynamodb.starter.billing.mode}")
-    private BillingMode billingMode;
-
-    @Value("${dynamodb.starter.throughput.writeCapacity:10}")
-    private long writeCapacity;
-
-    @Value("${dynamodb.starter.throughput.readCapacity:10}")
-    private long readCapacity;
-
-    public DynamoDbBeanListener(DynamoDbClient dynamoDbClient, DefaultDynamoDbTableNameResolver prefixedTableNameResolver) {
+    @Autowired
+    public DynamoDbBeanListener(DynamoDbClient dynamoDbClient, DefaultDynamoDbTableNameResolver prefixedTableNameResolver,
+                                @Value("${dynamodb.starter.table.prefix}") String tablePrefix,
+                                @Value("${dynamodb.starter.package.scan:''}") String packageName,
+                                @Value("${dynamodb.starter.billing.mode}") BillingMode billingMode,
+                                @Value("${dynamodb.starter.throughput.writeCapacity:10}") long writeCapacity,
+                                @Value("${dynamodb.starter.throughput.readCapacity:10}") long readCapacity) {
         this.dynamoDbClient = dynamoDbClient;
         this.prefixedTableNameResolver = prefixedTableNameResolver;
+        this.tablePrefix = tablePrefix;
+        this.packageName = packageName;
+        this.billingMode = billingMode;
+        this.writeCapacity = writeCapacity;
+        this.readCapacity = readCapacity;
     }
 
 
     @Override
     public void onApplicationEvent(ContextRefreshedEvent event) {
+        scanForDynamoDbBeans();
+    }
+
+    private void scanForDynamoDbBeans() {
+        ClassPathScanningCandidateComponentProvider scanner = createClassPathScanner();
+        ListTablesResponse tableList = listExistingTables();
+        processBeans(scanner, tableList);
+    }
+
+    private ClassPathScanningCandidateComponentProvider createClassPathScanner() {
         ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false);
         scanner.addIncludeFilter(new AnnotationTypeFilter(DynamoDbBean.class));
+        return scanner;
+    }
+
+    private ListTablesResponse listExistingTables() {
         ListTablesRequest tablesRequest = ListTablesRequest.builder()
                 .exclusiveStartTableName(tablePrefix)
                 .build();
-        ListTablesResponse tableList = dynamoDbClient.listTables(tablesRequest);
+        return dynamoDbClient.listTables(tablesRequest);
+    }
+
+    private void processBeans(ClassPathScanningCandidateComponentProvider scanner, ListTablesResponse tableList) {
         for (BeanDefinition bd : scanner.findCandidateComponents(packageName)) {
-            Class<?> entity;
-            try {
-                entity = Class.forName(bd.getBeanClassName());
-            } catch (ClassNotFoundException e) {
-                throw new RuntimeException("Class not found");
-            }
-            if (entity.isAnnotationPresent(DynamoDbDocument.class)) {
-                continue;
-            }
-            String tableName = prefixedTableNameResolver.resolve(entity);
-            if (tableList.tableNames().stream().anyMatch(x -> x.equals(tableName))) {
-                log.debug("Table {} already existed. Skipping", tableName);
-                continue;
-            }
-            List<Method> keys = Arrays.stream(entity.getMethods())
-                    .filter(isMethodAnnotated()).toList();
-            //define attribute
-            List<AttributeDefinition> attributeDefinitions = new ArrayList<AttributeDefinition>();
-            //define 2nd indices
-            HashMap<String, List<KeySchemaElement>> indexKeySchema = new HashMap<>();
-            //define primary indices
-            List<KeySchemaElement> tableKeySchema = new ArrayList<>();
-
-            attributeAndKeysResolver(attributeDefinitions, tableKeySchema, keys, indexKeySchema);
-            List<GlobalSecondaryIndex> globalSecondaryIndices = globalSecondaryIndicesResolver(indexKeySchema);
-            //hash key need to be added first
-            tableKeySchema.sort(Comparator.comparing(t -> t.keyType().toString()));
-
-            CreateTableRequest createTableRequest = tableRequestResolver(tableName, attributeDefinitions,
-                    tableKeySchema, globalSecondaryIndices);
-            try {
-                dynamoDbClient.createTable(createTableRequest);
-            } catch (ResourceInUseException e) {
-                log.error(e.getMessage());
-            }
-            log.debug("Table {} installation successfully", tableName);
+            processBean(bd, tableList);
         }
     }
 
+    private void processBean(BeanDefinition bd, ListTablesResponse tableList) {
+        Class<?> entity = resolveEntityClass(bd);
+        if (entity.isAnnotationPresent(DynamoDbDocument.class)) {
+            return;
+        }
+
+        String tableName = prefixedTableNameResolver.resolve(entity);
+
+        if (tableList.tableNames().contains(tableName)) {
+            log.debug("Table {} already exists. Skipping.", tableName);
+            return;
+        }
+
+        String[] localIndexName = DynamoDbStarterUtils.getLocalIndexName(entity);
+
+        List<Method> keys = DynamoDbStarterUtils.getAnnotatedMethods(entity);
+
+        List<AttributeDefinition> attributeDefinitions = new ArrayList<>();
+        List<KeySchemaElement> tableKeySchema = new ArrayList<>();
+        HashMap<String, List<KeySchemaElement>> globalSecondaryIndexKeySchema = new HashMap<>();
+        HashMap<String, List<KeySchemaElement>> localSecondaryIndexKeySchema = new HashMap<>();
+
+        attributeAndKeysResolver(attributeDefinitions, tableKeySchema, keys, globalSecondaryIndexKeySchema, localSecondaryIndexKeySchema, localIndexName);
+
+        List<GlobalSecondaryIndex> globalSecondaryIndices = globalSecondaryIndicesResolver(globalSecondaryIndexKeySchema);
+        List<LocalSecondaryIndex> localSecondaryIndices = localSecondaryIndicesResolver(localSecondaryIndexKeySchema);
+
+        tableKeySchema.sort(Comparator.comparing(t -> t.keyType().toString()));
+        CreateTableRequest createTableRequest = tableRequestResolver(tableName, attributeDefinitions, tableKeySchema, globalSecondaryIndices, localSecondaryIndices);
+
+        try {
+            dynamoDbClient.createTable(createTableRequest);
+            log.debug("Table {} installation successful.", tableName);
+        } catch (ResourceInUseException e) {
+            log.error(e.getMessage());
+        }
+    }
+
+    private Class<?> resolveEntityClass(BeanDefinition bd) {
+        try {
+            return Class.forName(bd.getBeanClassName());
+        } catch (ClassNotFoundException e) {
+            log.error(CLASS_NOT_FOUND_MESSAGE, e);
+            throw new EntityNotFoundException(CLASS_NOT_FOUND_MESSAGE);
+        }
+    }
 
     private CreateTableRequest tableRequestResolver(String tableName, List<AttributeDefinition> attributeDefinitions,
-                                                    List<KeySchemaElement> keySchemas, List<GlobalSecondaryIndex> globalSecondaryIndices) {
+                                                    List<KeySchemaElement> keySchemas,
+                                                    List<GlobalSecondaryIndex> globalSecondaryIndices,
+                                                    List<LocalSecondaryIndex> localSecondaryIndices) {
         CreateTableRequest.Builder createTableRequest = CreateTableRequest.builder()
                 .tableName(tableName)
                 .attributeDefinitions(attributeDefinitions)
                 .keySchema(keySchemas);
         if (!CollectionUtils.isEmpty(globalSecondaryIndices)) {
             createTableRequest.globalSecondaryIndexes(globalSecondaryIndices);
+        }
+        if (!CollectionUtils.isEmpty(localSecondaryIndices)) {
+            createTableRequest.localSecondaryIndexes(localSecondaryIndices);
         }
 
         if (billingMode.equals(BillingMode.PROVISIONED)) {
@@ -121,14 +157,16 @@ public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshe
         return createTableRequest.build();
     }
 
-    private void attributeAndKeysResolver(List<AttributeDefinition> attributeDefinitions, List<KeySchemaElement> tableKeySchema, List<Method> keys, HashMap<String, List<KeySchemaElement>> secondIndexKeySchema) {
+    private void attributeAndKeysResolver(List<AttributeDefinition> attributeDefinitions, List<KeySchemaElement> tableKeySchema,
+                                          List<Method> keys, HashMap<String, List<KeySchemaElement>> globalSecondaryIndexKeySchema,
+                                          HashMap<String, List<KeySchemaElement>> localSecondaryIndexKeySchema, String[] localIndexName) {
         for (Method key : keys) {
             attributeDefinitions.add(AttributeDefinition.builder()
                     .attributeName(DynamoDbStarterUtils.getFieldName(key.getName()))
                     .attributeType(DynamoDbStarterUtils.getScalarAttributeType(key.getReturnType()))
                     .build());
             tableKeySchemaResolver(key, tableKeySchema);
-            secondIndexKeySchemaResolver(key, secondIndexKeySchema);
+            secondaryIndexKeySchemaResolver(key, globalSecondaryIndexKeySchema, localSecondaryIndexKeySchema, localIndexName);
         }
     }
 
@@ -142,25 +180,43 @@ public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshe
         }
     }
 
-    private void secondIndexKeySchemaResolver(Method key, HashMap<String, List<KeySchemaElement>> secondIndexKeySchema) {
+    private void secondaryIndexKeySchemaResolver(Method key, HashMap<String, List<KeySchemaElement>> globalSecondaryIndexKeySchema,
+                                                 HashMap<String, List<KeySchemaElement>> localSecondaryIndexKeySchema, String[] localIndexNames) {
         if (key.isAnnotationPresent(DynamoDbSecondaryPartitionKey.class)) {
             DynamoDbSecondaryPartitionKey dynamoDbSecondaryPartitionKey = key.getAnnotation(DynamoDbSecondaryPartitionKey.class);
             String[] indexNames = dynamoDbSecondaryPartitionKey.indexNames();
             for (String index : indexNames) {
-                List<KeySchemaElement> elements = secondIndexKeySchema.getOrDefault(index, new ArrayList<>());
-                elements.add(KeySchemaElement.builder().
-                        attributeName(DynamoDbStarterUtils.getFieldName(key.getName())).keyType(KeyType.HASH).build());
-                secondIndexKeySchema.put(index, elements);
+                List<KeySchemaElement> elements;
+                if (Arrays.asList(localIndexNames).contains(index)) {
+                    elements = localSecondaryIndexKeySchema.getOrDefault(index, new ArrayList<>());
+                    elements.add(KeySchemaElement.builder().
+                            attributeName(DynamoDbStarterUtils.getFieldName(key.getName())).keyType(KeyType.HASH).build());
+                    localSecondaryIndexKeySchema.put(index, elements);
+                } else {
+                    elements = globalSecondaryIndexKeySchema.getOrDefault(index, new ArrayList<>());
+                    elements.add(KeySchemaElement.builder().
+                            attributeName(DynamoDbStarterUtils.getFieldName(key.getName())).keyType(KeyType.HASH).build());
+                    globalSecondaryIndexKeySchema.put(index, elements);
+                }
             }
         }
         if (key.isAnnotationPresent(DynamoDbSecondarySortKey.class)) {
             DynamoDbSecondarySortKey dynamoDbSecondarySortKey = key.getAnnotation(DynamoDbSecondarySortKey.class);
             String[] indexNames = dynamoDbSecondarySortKey.indexNames();
             for (String index : indexNames) {
-                List<KeySchemaElement> elements = secondIndexKeySchema.getOrDefault(index, new ArrayList<>());
-                elements.add(KeySchemaElement.builder().
-                        attributeName(DynamoDbStarterUtils.getFieldName(key.getName())).keyType(KeyType.RANGE).build());
-                secondIndexKeySchema.put(index, elements);
+                List<KeySchemaElement> elements ;
+                if (Arrays.asList(localIndexNames).contains(index)) {
+                    elements = localSecondaryIndexKeySchema.getOrDefault(index, new ArrayList<>());
+                    elements.add(KeySchemaElement.builder().
+                            attributeName(DynamoDbStarterUtils.getFieldName(key.getName())).keyType(KeyType.RANGE).build());
+                    localSecondaryIndexKeySchema.put(index, elements);
+                } else {
+                    elements = globalSecondaryIndexKeySchema.getOrDefault(index, new ArrayList<>());
+                    elements.add(KeySchemaElement.builder().
+                            attributeName(DynamoDbStarterUtils.getFieldName(key.getName())).keyType(KeyType.RANGE).build());
+                    globalSecondaryIndexKeySchema.put(index, elements);
+
+                }
             }
         }
     }
@@ -177,13 +233,15 @@ public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshe
         return globalSecondaryIndices;
     }
 
-
-
-    private Predicate<Method> isMethodAnnotated() {
-        return x -> x.isAnnotationPresent(DynamoDbPartitionKey.class)
-                || x.isAnnotationPresent(DynamoDbSortKey.class)
-                || x.isAnnotationPresent(DynamoDbSecondaryPartitionKey.class)
-                || x.isAnnotationPresent(DynamoDbSecondarySortKey.class);
+    private List<LocalSecondaryIndex> localSecondaryIndicesResolver(HashMap<String, List<KeySchemaElement>> indexKeySchema) {
+        List<LocalSecondaryIndex> localSecondaryIndices = new ArrayList<>();
+        indexKeySchema.forEach((indexName, indexSchemaList) -> {
+            indexSchemaList.sort(Comparator.comparing(t -> t.keyType().toString()));
+            LocalSecondaryIndex glsIndex = LocalSecondaryIndex.builder().indexName(indexName)
+                    .projection(Projection.builder().projectionType(ProjectionType.ALL).build()).keySchema(indexSchemaList)
+                    .build();
+            localSecondaryIndices.add(glsIndex);
+        });
+        return localSecondaryIndices;
     }
-
 }

@@ -1,20 +1,38 @@
 name: Coverage checking
-on: [push, pull_request]
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - '*'
 jobs:
-  run:
+  build:
+    name: Build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
       - name: Set up JDK 17
         uses: actions/setup-java@v1
         with:
           java-version: 17
-      - name: Install dependencies
-        run: mvn install -DskipTests=true
-      - name: Run tests and collect coverage
-        run: mvn -B test
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4-beta
+      - name: Cache SonarQube packages
+        uses: actions/cache@v1
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+      - name: Cache Maven packages
+        uses: actions/cache@v1
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+      - name: Build and analyze
         env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_ORG_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=spring-dynamodb-initialization

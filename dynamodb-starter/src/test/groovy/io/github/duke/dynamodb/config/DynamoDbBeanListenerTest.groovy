@@ -57,12 +57,11 @@ class DynamoDbBeanListenerTest extends Specification {
         def type = KeyType.HASH
         def keySchemaSize = UserEntity.getDeclaredMethods().findAll(x -> x.isAnnotationPresent(DynamoDbSortKey) || x.isAnnotationPresent(DynamoDbPartitionKey)).size()
         def indexSize = UserEntity.getDeclaredMethods().findAll(x -> x.isAnnotationPresent(DynamoDbSortKey) || x.isAnnotationPresent(DynamoDbPartitionKey)).size()
-
+        def packageName = "io.github.duke.dynamodb"
         and:
-        DynamoDbBeanListener listener = new DynamoDbBeanListener(dynamoDbClient, prefixedTableNameResolver)
-        listener.tablePrefix = tablePrefix
-        listener.packageName ="io.github.duke.dynamodb"
-        listener.billingMode = BillingMode.PAY_PER_REQUEST
+        DynamoDbBeanListener listener = new DynamoDbBeanListener(dynamoDbClient, prefixedTableNameResolver,
+                tablePrefix, packageName, BillingMode.PAY_PER_REQUEST, 0, 0
+        )
 
         when:
         listener.onApplicationEvent(contextRefreshedEvent)
