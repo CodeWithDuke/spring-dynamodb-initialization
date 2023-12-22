@@ -6,8 +6,35 @@
 
     <groupId>io.github.codewithduke</groupId>
     <artifactId>spring-dynamodb-initialization</artifactId>
-    <version>1.0.0</version>
+    <name>Spring dynamodb starter parent</name>
+    <description>This is a project support handle auto create/delete
+        index and table when application start</description>
+    <url>https://github.com/CodeWithDuke/spring-dynamodb-initialization</url>
+    <version>1.0.1</version>
     <packaging>pom</packaging>
+
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>http://www.opensource.org/licenses/mit-license.php</url>
+        </license>
+    </licenses>
+
+    <scm>
+        <connection>scm:git://github.com:CodeWithDuke/spring-dynamodb-initialization.git</connection>
+        <developerConnection>scm:git:https://github.com/CodeWithDuke/spring-dynamodb-initialization.git</developerConnection>
+        <url>https://github.com/CodeWithDuke/spring-dynamodb-initialization</url>
+    </scm>
+
+    <developers>
+        <developer>
+            <name>Duke Vu</name>
+            <email>vuduc047@gmail.com</email>
+            <organization>io.github.codewithduke</organization>
+            <organizationUrl>https://github.com/CodeWithDuke</organizationUrl>
+        </developer>
+    </developers>
+
     <modules>
         <module>dynamodb-starter</module>
     </modules>
@@ -34,7 +61,7 @@
             <dependency>
                 <groupId>io.github.codewithduke</groupId>
                 <artifactId>dynamodb-starter</artifactId>
-                <version>1.0.0</version>
+                <version>${project.version}</version>
             </dependency>
 
             <!-- Spring Context -->
@@ -126,10 +153,13 @@
     </dependencyManagement>
 
     <distributionManagement>
+        <snapshotRepository>
+            <id>ossrh</id>
+            <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
+        </snapshotRepository>
         <repository>
-            <id>github</id>
-            <name>GitHub Packages</name>
-            <url>https://maven.pkg.github.com/CodeWithDuke/spring-dynamodb-initialization</url>
+            <id>ossrh</id>
+            <url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
         </repository>
     </distributionManagement>
 
@@ -164,6 +194,84 @@
                             <goal>compile</goal>
                             <goal>compileTests</goal>
                         </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.sonatype.plugins</groupId>
+                <artifactId>nexus-staging-maven-plugin</artifactId>
+                <version>1.6.7</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <serverId>ossrh</serverId>
+                    <nexusUrl>https://s01.oss.sonatype.org/</nexusUrl>
+                    <autoReleaseAfterClose>true</autoReleaseAfterClose>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.thoughtworks.xstream</groupId>
+                        <artifactId>xstream</artifactId>
+                        <version>1.4.15</version> <!-- apparently this needs to be exactly this version -->
+                    </dependency>
+                </dependencies>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-gpg-plugin</artifactId>
+                <version>1.5</version>
+                <executions>
+                    <execution>
+                        <id>sign-artifacts</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>sign</goal>
+                        </goals>
+                        <configuration>
+                            <keyname>0x3F4F743D</keyname>
+                            <passphrase>gpg.passphrase</passphrase>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>3.2.1</version>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar-no-fork</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>2.9.1</version>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>attach-javadoc-jar</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>javadoc</classifier>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

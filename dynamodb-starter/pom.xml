@@ -6,13 +6,13 @@
     <parent>
         <groupId>io.github.codewithduke</groupId>
         <artifactId>spring-dynamodb-initialization</artifactId>
-        <version>1.0.0</version>
+        <version>1.0.1</version>
     </parent>
 
     <artifactId>dynamodb-starter</artifactId>
     <name>Spring dynamodb starter</name>
     <description>Handle table creation, modification base on entities </description>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

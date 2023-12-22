@@ -13,13 +13,51 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.function.Predicate;
 
+/**
+ * Utility class for DynamoDB Starter.
+ * <p>
+ * This class provides various utility methods related to DynamoDB, such as determining the
+ * {@link ScalarAttributeType} of a given class, extracting field names from method names,
+ * retrieving annotated methods within a class, and obtaining local index names using annotations.
+ *
+ * @see ScalarAttributeType
+ * @see DynamoDbPartitionKey
+ * @see DynamoDbSortKey
+ * @see DynamoDbSecondaryPartitionKey
+ * @see DynamoDbSecondarySortKey
+ * @see LocalDynamoSecondaryInfo
+ */
 public class DynamoDbStarterUtils {
     private DynamoDbStarterUtils() {
+        // Private constructor to prevent instantiation of the utility class.
     }
 
     private static final String IS_PREFIX = "is";
     private static final String GET_PREFIX = "get";
 
+    /**
+     * Gets the {@link ScalarAttributeType} for a given class.
+     *
+     * @param clazz The class to determine the scalar attribute type for.
+     * @return The corresponding scalar attribute type.
+     *        <ul>
+     *        <li>
+     *        <p>
+     *        <code>S</code> - the attribute is of type String
+     *        </p>
+     *        </li>
+     *        <li>
+     *        <p>
+     *        <code>N</code> - the attribute is of type Number
+     *        </p>
+     *        </li>
+     *        <li>
+     *        <p>
+     *        <code>B</code> - the attribute is of type Binary
+     *        </p>
+     *        </li>
+     *        </ul>
+     */
     public static ScalarAttributeType getScalarAttributeType(Class<?> clazz) {
         if (clazz == null) {
             return ScalarAttributeType.UNKNOWN_TO_SDK_VERSION;
@@ -34,6 +72,12 @@ public class DynamoDbStarterUtils {
         }
     }
 
+    /**
+     * Extracts the field name from a given method name.
+     *
+     * @param methodName The method name.
+     * @return The corresponding field name.
+     */
     public static String getFieldName(String methodName) {
         if (!StringUtils.hasText(methodName)) {
             return methodName;
@@ -49,11 +93,20 @@ public class DynamoDbStarterUtils {
         return StringUtils.uncapitalize(fieldName);
     }
 
+    /**
+     * Retrieves a list of annotated methods within a class.
+     *
+     * @param entity The class to inspect.
+     * @return A list of annotated methods.
+     */
     public static List<Method> getAnnotatedMethods(Class<?> entity) {
         return Arrays.stream(entity.getMethods())
                 .filter(isMethodAnnotated()).toList();
     }
 
+    /**
+     * @return a predicate for filtering methods based on DynamoDB annotations.
+     */
     private static Predicate<Method> isMethodAnnotated() {
         return x -> x.isAnnotationPresent(DynamoDbPartitionKey.class)
                 || x.isAnnotationPresent(DynamoDbSortKey.class)
@@ -61,6 +114,12 @@ public class DynamoDbStarterUtils {
                 || x.isAnnotationPresent(DynamoDbSecondarySortKey.class);
     }
 
+    /**
+     * Gets local index names from the {@link LocalDynamoSecondaryInfo} annotation on a class.
+     *
+     * @param entity The class to check for annotations.
+     * @return An array of local index names.
+     */
     public static String[] getLocalIndexName(Class<?> entity) {
         if (entity.isAnnotationPresent(LocalDynamoSecondaryInfo.class)) {
             LocalDynamoSecondaryInfo localDynamoSecondaryInfo = entity.getAnnotation(LocalDynamoSecondaryInfo.class);

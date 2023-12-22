@@ -21,6 +21,12 @@ import io.github.duke.dynamodb.annotation.DynamoDbDocument;
 import java.lang.reflect.Method;
 import java.util.*;
 
+/**
+ * An {@link ApplicationListener} implementation for DynamoDB bean initialization.
+ * <p>
+ * This listener scans the classpath for beans annotated with {@link DynamoDbBean},
+ * and ensures that corresponding DynamoDB tables are created based on the provided configurations.
+ */
 @Slf4j
 @Component
 public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshedEvent> {
@@ -35,6 +41,17 @@ public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshe
     private final long writeCapacity;
     private final long readCapacity;
 
+    /**
+     * Constructs a DynamoDbBeanListener with the necessary dependencies.
+     *
+     * @param dynamoDbClient            The DynamoDB client.
+     * @param prefixedTableNameResolver The table name resolver.
+     * @param tablePrefix               The table prefix.
+     * @param packageName               The package name to scan for DynamoDB beans.
+     * @param billingMode               The billing mode for DynamoDB tables.
+     * @param writeCapacity             The provisioned write capacity for DynamoDB tables.
+     * @param readCapacity              The provisioned read capacity for DynamoDB tables.
+     */
     @Autowired
     public DynamoDbBeanListener(DynamoDbClient dynamoDbClient, DefaultDynamoDbTableNameResolver prefixedTableNameResolver,
                                 @Value("${dynamodb.starter.table.prefix}") String tablePrefix,
@@ -52,23 +69,39 @@ public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshe
     }
 
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public void onApplicationEvent(ContextRefreshedEvent event) {
         scanForDynamoDbBeans();
     }
 
+    /**
+     * {@inheritDoc}
+     */
     private void scanForDynamoDbBeans() {
         ClassPathScanningCandidateComponentProvider scanner = createClassPathScanner();
         ListTablesResponse tableList = listExistingTables();
         processBeans(scanner, tableList);
     }
 
+    /**
+     * Creates an instance of {@link ClassPathScanningCandidateComponentProvider} for DynamoDB beans.
+     *
+     * @return The configured scanner.
+     */
     private ClassPathScanningCandidateComponentProvider createClassPathScanner() {
         ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false);
         scanner.addIncludeFilter(new AnnotationTypeFilter(DynamoDbBean.class));
         return scanner;
     }
 
+    /**
+     * Lists existing DynamoDB tables.
+     *
+     * @return The response containing the list of tables.
+     */
     private ListTablesResponse listExistingTables() {
         ListTablesRequest tablesRequest = ListTablesRequest.builder()
                 .exclusiveStartTableName(tablePrefix)
@@ -76,12 +109,25 @@ public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshe
         return dynamoDbClient.listTables(tablesRequest);
     }
 
+    /**
+     * Processes DynamoDB beans, checks for existing tables, and creates new ones if needed.
+     *
+     * @param scanner   The component scanner.
+     * @param tableList The list of existing tables.
+     */
     private void processBeans(ClassPathScanningCandidateComponentProvider scanner, ListTablesResponse tableList) {
         for (BeanDefinition bd : scanner.findCandidateComponents(packageName)) {
             processBean(bd, tableList);
         }
     }
 
+    /**
+     * Processes an individual DynamoDB bean, checking for the existence of its table,
+     * and creating a new table if needed.
+     *
+     * @param bd        The BeanDefinition of the DynamoDB bean.
+     * @param tableList The list of existing tables.
+     */
     private void processBean(BeanDefinition bd, ListTablesResponse tableList) {
         Class<?> entity = resolveEntityClass(bd);
         if (entity.isAnnotationPresent(DynamoDbDocument.class)) {
@@ -120,6 +166,13 @@ public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshe
         }
     }
 
+    /**
+     * Resolves the entity class from the provided {@link BeanDefinition}.
+     *
+     * @param bd The BeanDefinition of the DynamoDB bean.
+     * @return The resolved entity class.
+     * @throws EntityNotFoundException If the class is not found.
+     */
     private Class<?> resolveEntityClass(BeanDefinition bd) {
         try {
             return Class.forName(bd.getBeanClassName());
@@ -129,6 +182,16 @@ public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshe
         }
     }
 
+    /**
+     * Resolves the {@link CreateTableRequest} based on the provided parameters.
+     *
+     * @param tableName              The name of the DynamoDB table.
+     * @param attributeDefinitions   The list of attribute definitions.
+     * @param keySchemas             The list of key schema elements.
+     * @param globalSecondaryIndices The list of global secondary indexes.
+     * @param localSecondaryIndices  The list of local secondary indexes.
+     * @return The resolved CreateTableRequest.
+     */
     private CreateTableRequest tableRequestResolver(String tableName, List<AttributeDefinition> attributeDefinitions,
                                                     List<KeySchemaElement> keySchemas,
                                                     List<GlobalSecondaryIndex> globalSecondaryIndices,
@@ -157,6 +220,16 @@ public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshe
         return createTableRequest.build();
     }
 
+    /**
+     * Resolves attributes and keys for the DynamoDB table.
+     *
+     * @param attributeDefinitions      The list of attribute definitions.
+     * @param tableKeySchema            The list of key schema elements for the main table.
+     * @param keys                      The list of annotated methods representing keys.
+     * @param globalSecondaryIndexKeySchema The map of global secondary index key schemas.
+     * @param localSecondaryIndexKeySchema  The map of local secondary index key schemas.
+     * @param localIndexName            The array of local index names.
+     */
     private void attributeAndKeysResolver(List<AttributeDefinition> attributeDefinitions, List<KeySchemaElement> tableKeySchema,
                                           List<Method> keys, HashMap<String, List<KeySchemaElement>> globalSecondaryIndexKeySchema,
                                           HashMap<String, List<KeySchemaElement>> localSecondaryIndexKeySchema, String[] localIndexName) {
@@ -170,6 +243,12 @@ public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshe
         }
     }
 
+    /**
+     * Resolves the key schema for the main table based on the provided method.
+     *
+     * @param key           The annotated method representing a key.
+     * @param tableKeySchema The list of key schema elements for the main table.
+     */
     private void tableKeySchemaResolver(Method key, List<KeySchemaElement> tableKeySchema) {
         if (key.isAnnotationPresent(DynamoDbPartitionKey.class)) {
             tableKeySchema.add(KeySchemaElement.builder().
@@ -180,6 +259,14 @@ public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshe
         }
     }
 
+    /**
+     * Resolves the key schema for secondary indexes based on the provided method.
+     *
+     * @param key                        The annotated method representing a key.
+     * @param globalSecondaryIndexKeySchema The map of global secondary index key schemas.
+     * @param localSecondaryIndexKeySchema  The map of local secondary index key schemas.
+     * @param localIndexNames            The array of local index names.
+     */
     private void secondaryIndexKeySchemaResolver(Method key, HashMap<String, List<KeySchemaElement>> globalSecondaryIndexKeySchema,
                                                  HashMap<String, List<KeySchemaElement>> localSecondaryIndexKeySchema, String[] localIndexNames) {
         if (key.isAnnotationPresent(DynamoDbSecondaryPartitionKey.class)) {
@@ -204,7 +291,7 @@ public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshe
             DynamoDbSecondarySortKey dynamoDbSecondarySortKey = key.getAnnotation(DynamoDbSecondarySortKey.class);
             String[] indexNames = dynamoDbSecondarySortKey.indexNames();
             for (String index : indexNames) {
-                List<KeySchemaElement> elements ;
+                List<KeySchemaElement> elements;
                 if (Arrays.asList(localIndexNames).contains(index)) {
                     elements = localSecondaryIndexKeySchema.getOrDefault(index, new ArrayList<>());
                     elements.add(KeySchemaElement.builder().
@@ -221,6 +308,12 @@ public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshe
         }
     }
 
+    /**
+     * Resolves the list of global secondary indexes based on the provided index key schema.
+     *
+     * @param indexKeySchema The map of global secondary index key schemas.
+     * @return The list of resolved global secondary indexes.
+     */
     private List<GlobalSecondaryIndex> globalSecondaryIndicesResolver(HashMap<String, List<KeySchemaElement>> indexKeySchema) {
         List<GlobalSecondaryIndex> globalSecondaryIndices = new ArrayList<>();
         indexKeySchema.forEach((indexName, indexSchemaList) -> {
@@ -233,6 +326,12 @@ public class DynamoDbBeanListener implements ApplicationListener<ContextRefreshe
         return globalSecondaryIndices;
     }
 
+    /**
+     * Resolves the list of local secondary indexes based on the provided index key schema.
+     *
+     * @param indexKeySchema The map of local secondary index key schemas.
+     * @return The list of resolved local secondary indexes.
+     */
     private List<LocalSecondaryIndex> localSecondaryIndicesResolver(HashMap<String, List<KeySchemaElement>> indexKeySchema) {
         List<LocalSecondaryIndex> localSecondaryIndices = new ArrayList<>();
         indexKeySchema.forEach((indexName, indexSchemaList) -> {
