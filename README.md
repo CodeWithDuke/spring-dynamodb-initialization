@@ -1,10 +1,22 @@
 # DynamoDB Starter for Spring
 
-Welcome to DynamoDB Starter for Spring! This library simplifies the integration of DynamoDB with your Spring application.
+Welcome to DynamoDB Starter for Spring! This library simplifies the integration of AWS DynamoDB sdk version 2 with your Spring application.
+The primary goal of Dynamodb Starter project is to make it easier to handle table and index automatically creation and modification.
 
 ## Getting Started
 
-### 1. Annotate Your Entities
+### 1. Setup
+Download the JAR though [Maven Central](https://central.sonatype.com/artifact/io.github.codewithduke/dynamodb-starter) ([`SNAPSHOT` builds](https://central.sonatype.com/artifact/io.github.codewithduke/dynamodb-starter) are available via the [OSSRH snapshot repository](https://github.com/CodeWithDuke/spring-dynamodb-initialization) ):
+
+```xml
+<dependency>
+    <groupId>io.github.codewithduke</groupId>
+    <artifactId>dynamodb-starter</artifactId>
+    <version>1.0.1</version>
+</dependency>
+
+```
+### 2. Annotate Your Entities
 
 Make sure to annotate your entities and entity objects with `@DynamoDbBean`. For child objects or arrays, include `@DynamoDbDocument`.
 Dynamodb Entity
@@ -79,7 +91,7 @@ public class VehicleNumber {
     private String vehicleNumberFourDigit;
 }
 ```
-### 2. Add Configuration Properties
+### 3. Add Configuration Properties
 
 In your application properties file, include the following properties to configure DynamoDB:
 
